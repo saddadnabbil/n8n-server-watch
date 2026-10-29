@@ -1,0 +1,29 @@
+services:
+  n8n:
+    image: n8nio/n8n:2.40.0
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - GENERIC_TIMEZONE=Asia/Jakarta
+      - TZ=Asia/Jakarta
+      - N8N_SECURE_COOKIE=false
+      # The workflow reads its targets and secrets from these variables.
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - WATCH_TARGETS=${WATCH_TARGETS}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-haiku-5-5}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/workflows:ro
+
+  # A local site to watch, so the workflow can be tried without a real server.
+  # Stop it with `docker compose stop demo-target` to trigger a DOWN alert.
+  demo-target:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+
+volumes:
+  n8n_data:
