@@ -171,7 +171,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "// Use Claude's summary when the call succeeded, otherwise send the raw alerts.\nconst incident = $('Detect changes').first().json;\nconst ai = $input.first().json;\nconst summary = ai && ai.content && ai.content[0] && ai.content[0].text;\nconst message = [`Server Watch alert (${incident.checkedAt})`, incident.text, summary ? `\\nSummary:\\n${summary}` : '']\n  .filter(Boolean)\n  .join('\\n');\nreturn [{ json: { message } }];\n"
+        "jsCode": "// Use Claude's summary when the call succeeded, otherwise send the raw alerts.\nconst incident = $('Detect changes').first().json;\nconst ai = $input.first().json;\nconst summary = ai && ai.content && ai.content[0] && ai.content[0].text;\nconst message = [`Server Watch alert (${incident.checkedAt})`, incident.text, summary ? `\\nSummary:\\n${summary}` : '']\n  .filter(Boolean)\n  .join('\\n');\nconst first = incident.alerts[0];\nconst more = incident.alerts.length > 1 ? ` (+${incident.alerts.length - 1} more)` : '';\nconst subject = `Server Watch: ${first.event} ${first.target}${more}`;\nreturn [{ json: { message, subject } }];\n"
       }
     },
     {
@@ -181,7 +181,7 @@
       "typeVersion": 4.2,
       "position": [
         1540,
-        0
+        -100
       ],
       "onError": "continueRegularOutput",
       "parameters": {
@@ -260,6 +260,34 @@
           }
         }
       }
+    },
+    {
+      "id": "6f0d7a52-1b1e-4d55-9d43-1a5b2c9e0a09",
+      "name": "Send email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1540,
+        100
+      ],
+      "onError": "continueRegularOutput",
+      "webhookId": "0b6c7e3e-2f4a-4f4e-9a57-3a4f1c2d9e09",
+      "parameters": {
+        "fromEmail": "={{ $env.ALERT_EMAIL_FROM }}",
+        "toEmail": "={{ $env.ALERT_EMAIL_TO }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.message }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "ServerWatchSmtp1",
+          "name": "Server Watch SMTP"
+        }
+      }
     }
   ],
   "connections": {
@@ -334,6 +362,11 @@
         [
           {
             "node": "Send to Telegram",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send email",
             "type": "main",
             "index": 0
           }

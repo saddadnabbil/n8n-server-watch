@@ -6,7 +6,7 @@ An n8n workflow that watches web servers and tells you when something changes:
 - **RECOVERED**: it comes back.
 - **IP_CHANGED**: the domain's DNS A record points somewhere new.
 
-Alerts are sent once per change, not on every check. When an Anthropic API key is set, Claude adds a short summary in Indonesian with the likely cause and the first thing to check. The message goes to Telegram.
+Alerts are sent once per change, not on every check. When an Anthropic API key is set, Claude adds a short summary in Indonesian with the likely cause and the first thing to check. The message goes to Telegram and email.
 
 It started from a real incident: a production server's IP changed and nobody was notified until users complained.
 
@@ -14,7 +14,7 @@ It started from a real incident: a production server's IP changed and nobody was
 
 ```
 Every 5 minutes ─┐
-Run now ─────────┴─> Targets ─> Check (HTTP) ─> Resolve DNS (DoH) ─> Detect changes ─> Claude summary ─> Format message ─> Telegram
+Run now ─────────┴─> Targets ─> Check (HTTP) ─> Resolve DNS (DoH) ─> Detect changes ─> Claude summary ─> Format message ─> Telegram + Email (SMTP)
 Status page (GET) ─> Render status ─> Respond (HTML)
 ```
 
@@ -35,6 +35,7 @@ Requires Docker.
 ```bash
 cp .env.example .env          # set WATCH_TARGETS, and optionally the Claude and Telegram keys
 docker compose up -d
+docker compose exec n8n sh /scripts/import-smtp-credential.sh   # only if you set the SMTP_* variables
 docker compose exec n8n n8n import:workflow --input=/workflows/server-watch.json
 ```
 
@@ -58,8 +59,10 @@ Static data is only saved for scheduled (active) runs, so test state changes wit
 | `ANTHROPIC_MODEL` | Defaults to `claude-haiku-5-5` |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Where alerts go. Create a bot with @BotFather |
 | `STATUS_TOKEN` | Optional. Protects the status page |
+| `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO` | Sender and recipient of email alerts |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` | SMTP server. `scripts/import-smtp-credential.sh` turns these into an n8n credential, so the password never lives in the workflow file. Quote the password in `.env` if it contains spaces |
 
-The Claude and Telegram steps continue on error, so a missing key or a failed call never stops the check itself.
+The Claude, Telegram and email steps continue on error, so a missing key or a failed call never stops the check itself.
 
 ## Tests
 
@@ -71,4 +74,4 @@ npm test
 
 ## Stack
 
-n8n 2.40, Docker Compose, Cloudflare DNS over HTTPS, Anthropic Messages API, Telegram Bot API.
+n8n 2.40, Docker Compose, Cloudflare DNS over HTTPS, Anthropic Messages API, Telegram Bot API, SMTP.
