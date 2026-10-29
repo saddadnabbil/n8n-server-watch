@@ -10,12 +10,23 @@ Alerts are sent once per change, not on every check. When an Anthropic API key i
 
 It started from a real incident: a production server's IP changed and nobody was notified until users complained.
 
+![Workflow in the n8n editor](docs/workflow.png)
+
 ```
 Every 5 minutes ─┐
 Run now ─────────┴─> Targets ─> Check (HTTP) ─> Resolve DNS (DoH) ─> Detect changes ─> Claude summary ─> Format message ─> Telegram
+Status page (GET) ─> Render status ─> Respond (HTML)
 ```
 
 The previous state of each target is kept in the workflow's static data, so the workflow only continues past **Detect changes** when there is something new to report.
+
+## Status page
+
+The same workflow serves a status page at `http://localhost:5678/webhook/server-watch` once it is activated. It shows each target's current state, its IPs, when it last changed, and the latest 50 alerts, and refreshes every minute.
+
+![Status page](docs/status-page.png)
+
+Set `STATUS_TOKEN` to require `?token=<value>` before exposing n8n beyond your machine.
 
 ## Run it
 
@@ -46,6 +57,7 @@ Static data is only saved for scheduled (active) runs, so test state changes wit
 | `ANTHROPIC_API_KEY` | Optional. Enables the Claude summary. Without it, the raw alert is sent |
 | `ANTHROPIC_MODEL` | Defaults to `claude-haiku-5-5` |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Where alerts go. Create a bot with @BotFather |
+| `STATUS_TOKEN` | Optional. Protects the status page |
 
 The Claude and Telegram steps continue on error, so a missing key or a failed call never stops the check itself.
 

@@ -15,6 +15,7 @@ services:
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-haiku-5-5}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - STATUS_TOKEN=${STATUS_TOKEN:-}
     volumes:
       - n8n_data:/home/node/.n8n
       - ./workflows:/workflows:ro
