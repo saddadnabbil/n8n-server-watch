@@ -124,7 +124,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "// Compare this run with the previous one (kept in workflow static data)\n// and emit a single item only when something changed.\nconst targets = $('Targets').all().map((item) => item.json);\nconst checks = $('Check').all().map((item) => item.json);\nconst dns = $input.all().map((item) => item.json);\nconst state = $getWorkflowStaticData('global');\nstate.targets = state.targets || {};\n\nconst alerts = [];\nconst now = new Date().toISOString();\n\ntargets.forEach((target, i) => {\n  const check = checks[i] || {};\n  const status = typeof check.statusCode === 'number' ? check.statusCode : null;\n  const up = status !== null && status >= 200 && status < 400;\n  const detail = status !== null ? `HTTP ${status}` : (check.error && check.error.message) || 'no response';\n  const ips = ((dns[i] && dns[i].Answer) || [])\n    .filter((answer) => answer.type === 1)\n    .map((answer) => answer.data)\n    .sort();\n\n  const prev = state.targets[target.name];\n  const base = { target: target.name, url: target.url };\n  if (!prev) {\n    if (!up) alerts.push({ ...base, event: 'DOWN', detail });\n  } else {\n    if (prev.up && !up) alerts.push({ ...base, event: 'DOWN', detail });\n    if (!prev.up && up) alerts.push({ ...base, event: 'RECOVERED', detail });\n    if (ips.length && prev.ips.length && ips.join(',') !== prev.ips.join(',')) {\n      alerts.push({ ...base, event: 'IP_CHANGED', detail: `${prev.ips.join(', ')} -> ${ips.join(', ')}` });\n    }\n  }\n  const changed = !prev || prev.up !== up;\n  state.targets[target.name] = {\n    up,\n    url: target.url,\n    detail,\n    ips: ips.length ? ips : (prev ? prev.ips : []),\n    checkedAt: now,\n    since: changed ? now : prev.since,\n  };\n});\n\n// Keep the latest 50 alerts for the status page.\nstate.history = alerts.map((a) => ({ ...a, at: now })).concat(state.history || []).slice(0, 50);\n\nif (!alerts.length) return [];\nconst text = alerts.map((a) => `[${a.event}] ${a.target} (${a.url}): ${a.detail}`).join('\\n');\nreturn [{ json: { alerts, text, checkedAt: now } }];\n"
+        "jsCode": "// Compare this run with the previous one (kept in workflow static data)\n// and emit a single item only when something changed.\nconst targets = $('Targets').all().map((item) => item.json);\nconst checks = $('Check').all().map((item) => item.json);\nconst dns = $('Resolve DNS').all().map((item) => item.json);\nconst publicIp = ($('Public IP').first().json || {}).ip;\nconst state = $getWorkflowStaticData('global');\nstate.targets = state.targets || {};\n\nconst alerts = [];\nconst now = new Date().toISOString();\n\ntargets.forEach((target, i) => {\n  const check = checks[i] || {};\n  const status = typeof check.statusCode === 'number' ? check.statusCode : null;\n  const up = status !== null && status >= 200 && status < 400;\n  const detail = status !== null ? `HTTP ${status}` : (check.error && check.error.message) || 'no response';\n  const ips = ((dns[i] && dns[i].Answer) || [])\n    .filter((answer) => answer.type === 1)\n    .map((answer) => answer.data)\n    .sort();\n\n  const prev = state.targets[target.name];\n  const base = { target: target.name, url: target.url };\n  if (!prev) {\n    if (!up) alerts.push({ ...base, event: 'DOWN', detail });\n  } else {\n    if (prev.up && !up) alerts.push({ ...base, event: 'DOWN', detail });\n    if (!prev.up && up) alerts.push({ ...base, event: 'RECOVERED', detail });\n    if (ips.length && prev.ips.length && ips.join(',') !== prev.ips.join(',')) {\n      alerts.push({ ...base, event: 'IP_CHANGED', detail: `${prev.ips.join(', ')} -> ${ips.join(', ')}` });\n    }\n  }\n  const changed = !prev || prev.up !== up;\n  state.targets[target.name] = {\n    up,\n    url: target.url,\n    detail,\n    ips: ips.length ? ips : (prev ? prev.ips : []),\n    checkedAt: now,\n    since: changed ? now : prev.since,\n  };\n});\n\n\n// Egress IP of the machine running n8n. Office allowlists break when this changes.\nif ($env.WATCH_PUBLIC_IP === 'true' && publicIp) {\n  const prevIp = state.publicIp && state.publicIp.ip;\n  if (prevIp && prevIp !== publicIp) {\n    alerts.push({ target: 'public-ip', url: '-', event: 'PUBLIC_IP_CHANGED', detail: `${prevIp} -> ${publicIp}` });\n  }\n  state.publicIp = { ip: publicIp, checkedAt: now, since: prevIp === publicIp ? state.publicIp.since : now };\n}\n\n// Keep the latest 50 alerts for the status page.\nstate.history = alerts.map((a) => ({ ...a, at: now })).concat(state.history || []).slice(0, 50);\n\nif (!alerts.length) return [];\nconst text = alerts.map((a) => `[${a.event}] ${a.target} (${a.url}): ${a.detail}`).join('\\n');\nreturn [{ json: { alerts, text, checkedAt: now } }];\n"
       }
     },
     {
@@ -233,7 +233,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Status page: renders the state kept by \"Detect changes\".\nconst token = $env.STATUS_TOKEN;\nif (token && $json.query.token !== token) {\n  return { json: { status: 401, html: 'Unauthorized' } };\n}\n\nconst state = $getWorkflowStaticData('global');\nconst targets = Object.entries(state.targets || {});\nconst history = state.history || [];\nconst esc = (s) => String(s == null ? '' : s).replace(/[&<>\"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' })[c]);\nconst time = (iso) => (iso ? new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '-');\nconst down = targets.filter(([, t]) => !t.up).length;\n\nconst rows = targets.length\n  ? targets.map(([name, t]) => `<tr>\n      <td><span class=\"dot ${t.up ? 'up' : 'down'}\"></span>${t.up ? 'Up' : 'Down'}</td>\n      <td><b>${esc(name)}</b><div class=\"muted\">${esc(t.url)}</div></td>\n      <td>${esc(t.detail)}</td>\n      <td>${esc((t.ips || []).join(', ') || '-')}</td>\n      <td>${time(t.since)}</td>\n      <td>${time(t.checkedAt)}</td></tr>`).join('')\n  : '<tr><td colspan=\"6\" class=\"muted\">No checks yet. Activate the workflow and wait for the first run.</td></tr>';\n\nconst events = history.length\n  ? history.map((a) => `<tr><td>${time(a.at)}</td><td><span class=\"tag ${a.event}\">${a.event}</span></td><td>${esc(a.target)}</td><td>${esc(a.detail)}</td></tr>`).join('')\n  : '<tr><td colspan=\"4\" class=\"muted\">No alerts yet.</td></tr>';\n\nconst html = `<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"refresh\" content=\"60\">\n<title>Server Watch</title><style>\nbody{font-family:system-ui,sans-serif;margin:0;background:#f5f6f8;color:#1b1f24}\nmain{max-width:980px;margin:0 auto;padding:24px 16px}\nh1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:28px 0 8px}\n.summary{padding:12px 16px;border-radius:8px;margin:16px 0;font-weight:600}\n.ok{background:#e6f4ea;color:#1e6b34}.bad{background:#fce8e6;color:#a1251b}\ntable{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;font-size:14px}\nth,td{text-align:left;padding:10px 12px;border-bottom:1px solid #eceef1;vertical-align:top}\nth{background:#fafbfc;font-weight:600;color:#555}.muted{color:#777;font-size:12px}\n.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}\n.dot.up{background:#2e9e4f}.dot.down{background:#d93025}\n.tag{font-size:12px;font-weight:600;padding:2px 6px;border-radius:4px}\n.DOWN{background:#fce8e6;color:#a1251b}.RECOVERED{background:#e6f4ea;color:#1e6b34}.IP_CHANGED{background:#fef7e0;color:#8a5a00}\n.wrap{overflow-x:auto}</style></head><body><main>\n<h1>Server Watch</h1><div class=\"muted\">Refreshes every minute</div>\n<div class=\"summary ${down ? 'bad' : 'ok'}\">${targets.length ? (down ? `${down} of ${targets.length} targets down` : `All ${targets.length} targets up`) : 'Waiting for the first check'}</div>\n<div class=\"wrap\"><table><tr><th>Status</th><th>Target</th><th>Last result</th><th>IP</th><th>Since</th><th>Checked</th></tr>${rows}</table></div>\n<h2>Recent alerts</h2>\n<div class=\"wrap\"><table><tr><th>Time</th><th>Event</th><th>Target</th><th>Detail</th></tr>${events}</table></div>\n</main></body></html>`;\n\nreturn { json: { status: 200, html } };\n"
+        "jsCode": "// Status page: renders the state kept by \"Detect changes\".\nconst token = $env.STATUS_TOKEN;\nif (token && $json.query.token !== token) {\n  return { json: { status: 401, html: 'Unauthorized' } };\n}\n\nconst state = $getWorkflowStaticData('global');\nconst targets = Object.entries(state.targets || {});\nconst history = state.history || [];\nconst esc = (s) => String(s == null ? '' : s).replace(/[&<>\"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' })[c]);\nconst time = (iso) => (iso ? new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '-');\nconst down = targets.filter(([, t]) => !t.up).length;\nconst egress = state.publicIp\n  ? `<div class=\"muted\">Public IP of this monitor: <b>${esc(state.publicIp.ip)}</b> since ${time(state.publicIp.since)}</div>`\n  : '';\n\nconst rows = targets.length\n  ? targets.map(([name, t]) => `<tr>\n      <td><span class=\"dot ${t.up ? 'up' : 'down'}\"></span>${t.up ? 'Up' : 'Down'}</td>\n      <td><b>${esc(name)}</b><div class=\"muted\">${esc(t.url)}</div></td>\n      <td>${esc(t.detail)}</td>\n      <td>${esc((t.ips || []).join(', ') || '-')}</td>\n      <td>${time(t.since)}</td>\n      <td>${time(t.checkedAt)}</td></tr>`).join('')\n  : '<tr><td colspan=\"6\" class=\"muted\">No checks yet. Activate the workflow and wait for the first run.</td></tr>';\n\nconst events = history.length\n  ? history.map((a) => `<tr><td>${time(a.at)}</td><td><span class=\"tag ${a.event}\">${a.event}</span></td><td>${esc(a.target)}</td><td>${esc(a.detail)}</td></tr>`).join('')\n  : '<tr><td colspan=\"4\" class=\"muted\">No alerts yet.</td></tr>';\n\nconst html = `<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"refresh\" content=\"60\">\n<title>Server Watch</title><style>\nbody{font-family:system-ui,sans-serif;margin:0;background:#f5f6f8;color:#1b1f24}\nmain{max-width:980px;margin:0 auto;padding:24px 16px}\nh1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:28px 0 8px}\n.summary{padding:12px 16px;border-radius:8px;margin:16px 0;font-weight:600}\n.ok{background:#e6f4ea;color:#1e6b34}.bad{background:#fce8e6;color:#a1251b}\ntable{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;font-size:14px}\nth,td{text-align:left;padding:10px 12px;border-bottom:1px solid #eceef1;vertical-align:top}\nth{background:#fafbfc;font-weight:600;color:#555}.muted{color:#777;font-size:12px}\n.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}\n.dot.up{background:#2e9e4f}.dot.down{background:#d93025}\n.tag{font-size:12px;font-weight:600;padding:2px 6px;border-radius:4px}\n.DOWN{background:#fce8e6;color:#a1251b}.RECOVERED{background:#e6f4ea;color:#1e6b34}.IP_CHANGED,.PUBLIC_IP_CHANGED{background:#fef7e0;color:#8a5a00}\n.wrap{overflow-x:auto}</style></head><body><main>\n<h1>Server Watch</h1><div class=\"muted\">Refreshes every minute</div>${egress}\n<div class=\"summary ${down ? 'bad' : 'ok'}\">${targets.length ? (down ? `${down} of ${targets.length} targets down` : `All ${targets.length} targets up`) : 'Waiting for the first check'}</div>\n<div class=\"wrap\"><table><tr><th>Status</th><th>Target</th><th>Last result</th><th>IP</th><th>Since</th><th>Checked</th></tr>${rows}</table></div>\n<h2>Recent alerts</h2>\n<div class=\"wrap\"><table><tr><th>Time</th><th>Event</th><th>Target</th><th>Detail</th></tr>${events}</table></div>\n</main></body></html>`;\n\nreturn { json: { status: 200, html } };\n"
       }
     },
     {
@@ -288,6 +288,38 @@
           "name": "Server Watch SMTP"
         }
       }
+    },
+    {
+      "id": "6f0d7a52-1b1e-4d55-9d43-1a5b2c9e0a13",
+      "name": "Public IP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        770,
+        200
+      ],
+      "executeOnce": true,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "url": "https://api.ipify.org",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "format",
+              "value": "json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
     }
   ],
   "connections": {
@@ -328,7 +360,7 @@
       "main": [
         [
           {
-            "node": "Detect changes",
+            "node": "Public IP",
             "type": "main",
             "index": 0
           }
@@ -400,6 +432,17 @@
         [
           {
             "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Public IP": {
+      "main": [
+        [
+          {
+            "node": "Detect changes",
             "type": "main",
             "index": 0
           }

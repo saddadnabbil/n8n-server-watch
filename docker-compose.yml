@@ -16,6 +16,7 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - STATUS_TOKEN=${STATUS_TOKEN:-}
+      - WATCH_PUBLIC_IP=${WATCH_PUBLIC_IP:-false}
       - ALERT_EMAIL_FROM=${ALERT_EMAIL_FROM:-}
       - ALERT_EMAIL_TO=${ALERT_EMAIL_TO:-}
       # Only read by scripts/import-smtp-credential.sh to create the n8n SMTP credential.
@@ -30,9 +31,10 @@ services:
       - ./scripts:/scripts:ro
 
   # A local site to watch, so the workflow can be tried without a real server.
-  # Stop it with `docker compose stop demo-target` to trigger a DOWN alert.
+  # Start it with `docker compose --profile demo up -d`; stop it to trigger a DOWN alert.
   demo-target:
     image: nginx:1.27-alpine
+    profiles: [demo]
     restart: unless-stopped
 
 volumes:
